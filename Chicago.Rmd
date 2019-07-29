@@ -1,0 +1,142 @@
+---
+title: "Statistics 137 Project"
+author: "Troy lui"
+date: "December 7, 2018"
+output:
+  word_document: default
+  html_document: default
+---
+
+#3 to 5. 
+
+```{r, echo = FALSE}
+chic = read.delim("/Users/Troy/Downloads/chicago.txt")
+colnames(chic) = c('receipts','date')
+```
+
+```{r, echo = FALSE}
+ts.plot(chic$receipts, ylab = "Average Receipts", main = "Raw Time Series")
+```
+
+```{r, echo = FALSE}
+source("/Users/Troy/Downloads/trndseas.R")
+##note function provided by class 
+tchic = chic$receipts
+tchic = as.numeric(tchic)
+n = length(tchic)
+lambdas = seq(-2,2,0.1)
+```
+
+```{r, echo = FALSE}
+s = 7
+deg = 2
+mod = trndseas(tchic,s,lambdas,deg)
+#str(mod)
+#mod$lamopt
+#mod$season
+ts.plot(tchic^mod$lamopt, main = "Transformed and Fitted", ylab = "Transformed Receipts")
+lines(mod$fitted, col = "red")
+legend(65, 2.35, legend = c("Transformed", "Fitted"), col = c("black", "red"), lty = 1, cex = 0.8)
+ts.plot(tchic^mod$lamopt, main = "Estimated Trend", ylab = "Transformed Receipts")
+lines(mod$trend, col = "red")
+legend(65, 2.35, legend = c("Transformed", "Trend"), col = c("black", "red"), lty = 1, cex = 0.8)
+seas = rep(mod$season, length.out = n)
+seastrend = seas + mod$trend
+transframe = tchic^mod$lamopt
+roughframe = transframe-seastrend
+ts.plot(roughframe, main = "Estimated Rough", ylab = ''); abline(h=0)
+ts.plot(seas, main = "Estimated Seasonal", ylab = '')
+```
+
+#5 & 6. 
+
+```{r, echo = FALSE}
+library(tseries)
+acf(roughframe, lag.max = 20, main = "ACF: Rough")
+pacf(roughframe,lag.max = 20, main = "PACF: Rough")
+qqnorm(roughframe); qqline(roughframe)
+Box.test(roughframe, lag = 10, type = 'Ljung-Box')
+kpss.test(roughframe)
+```
+
+#7. 
+
+```{r, echo = FALSE}
+library(forecast)
+roughmod = auto.arima(roughframe, stepwise = F, approximation = F)
+res = roughmod$residuals
+checkresiduals(res)
+Box.test(res, type = "Ljung-Box", lag = 10)
+qqnorm(res); qqline(res)
+roughmod
+#receive coefficients 
+#Since |phi| < 1, the ARMA(1,1) is stationary
+#Since |theta| < 1, the series is also invertible
+```
+
+#8. 
+
+```{r, echo = FALSE}
+library(astsa)
+#coef.ar1 = 1.2711
+#coef.ar2 = -0.6895
+#coef.ma1 = -1.0718
+#coef.ma2 = 0.4301
+#coef.ma3 = 0.3651
+#sigma2 = 0.0004753
+
+coef.ar1_1 = 0.832
+coef.ma1_1 = -0.3363
+sigma2 = 0.001159
+mod_spec = arma.spec(ar=c(coef.ar1_1), ma = c(coef.ma1_1), var.noise = sigma2, log = 'no', main = 'Spectral Density and Smoothed Periodogram')
+mod_smooth = spec.pgram(roughframe, log = 'no', spans = 7, main = '', col = "red", plot = F)
+lines(mod_smooth$freq, mod_smooth$spec, col = "green")
+legend(0.3, 0.018, legend = c("Spectral", "Smoothed"), col = c("black", "green"), lty = 1, cex = 0.8)
+```
+
+```{r, echo = FALSE}
+m = floor(n/2)
+spans = (1:(m-1))*2+1
+pgrm_raw = spec.pgram(transframe, log='no', plot= F)$spec
+Q <- numeric(length(spans))
+for(j in 1:length(spans)){
+  L <- spans[j]
+  pgrm_smooth <- spec.pgram(transframe, spans=L,log="no", plot=F)$spec
+  Q[j] <- sum((pgrm_smooth - pgrm_raw) ^ 2) + sum((pgrm_raw)^2)/(L-1)
+}
+#plot(x = spans, y=Q, type = 'b')
+#spans[which.min(Q)]
+##25 span
+```
+
+```{r, echo = FALSE}
+#last 7 days gone
+rough_no7 = roughframe
+rough_no7 = rough_no7[-c(99,100,101,102,103,104,105)]
+mod_ARMA23 = arima(rough_no7, order = c(1,0,1))
+
+#forecast trend 
+h = 7
+library(Hmisc)
+ind_old = 1:98
+ind_new = c(99,100,101,102,103,104,105) 
+trend_f = approxExtrap(ind_old, mod$trend, xout= ind_new)$y
+
+#forecast season
+season_f = rep(mod$season, length.out = n)[-(1:98)]
+
+#make sure to untransform later
+fcast = predict(mod_ARMA23, n.ahead = 7)
+x_fc = fcast$pred
+
+truepredicted = x_fc+trend_f+season_f
+untransform_predict = truepredicted^10
+plot(c(99,100,101,102,103,104,105), chic$receipts[99:105], col = "red", main = "Observed and Predicted Values", xlab = "Time", ylab = "Receipts")
+points(c(99,100,101,102,103,104,105),untransform_predict, col = "green")
+legend(102, 700, legend = c("Observed", "Predicted"), col = c("red", "green"), pch = 1, cex = 0.8)
+```
+
+Appendix
+```{r, ref.label=knitr::all_labels(), echo = TRUE, eval = FALSE}
+ 
+``` 
